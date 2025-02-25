@@ -4,7 +4,7 @@ from utils.lr_solution_process import lr_solution_process
 import sys
 import pickle
 if __name__=='__main__':
-    for destination in [1]:
+    for destination in [4]:
         if destination==3:
             c1=1 #deprecated
             c2=1 #车辆最少

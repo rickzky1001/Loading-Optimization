@@ -26,7 +26,6 @@ def lr_solve(time,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUNISHMENT_N
     print('需求量最大的sku数量:',max_sku_qty)
 
 
-
     model = gp.Model("loading_optimization")
     VT = model.addVars(len(vehicle_types), vtype=GRB.BINARY, name="vehicle type")
     IA = model.addVars(vehicle_ub, vtype=GRB.BINARY, name="is_active")

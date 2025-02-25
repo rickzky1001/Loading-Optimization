@@ -12,7 +12,6 @@ def solve(time,lr_solution,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUN
     valid_sku=utils.data_process.filter(orders=orders,sku=sku)
     print('总SKU种类:',len(valid_sku))
     demands=pd.merge(orders,sku,on='SKU')
-    demands.to_excel('demands.xlsx',index=False)
     #车辆数ub,lb计算
     vehicle_types = [1,2,3,4]
     M=100000
@@ -35,7 +34,8 @@ def solve(time,lr_solution,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUN
     sku_demand=demand_des['Qty'].values
     for v in range(vehicle_ub):
         for i in range(len(sku_des)):
-            LA[v, i].ub = sku_demand[i]
+            #LA[v, i].ub = sku_demand[i]
+            LA[v, i].ub = max_sku_qty
     LA_Bi = model.addVars(vehicle_ub, len(sku_des), vtype=GRB.BINARY, name="LA_Bi")#该sku是否为空,Loading_Binary
 
     if destination!=3:

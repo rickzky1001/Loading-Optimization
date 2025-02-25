@@ -12,7 +12,6 @@ def lr_solution_process(lr_solution,destination):
     valid_sku=utils.data_process.filter(orders=orders,sku=sku)
     print('总SKU种类:',len(valid_sku))
     demands=pd.merge(orders,sku,on='SKU')
-    demands.to_excel('demands.xlsx',index=False)
     #车辆数ub,lb计算
     vehicle_types = [1,2,3,4]
     M=100000
