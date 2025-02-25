@@ -1,13 +1,12 @@
 from utils.data_read import read
 from utils.vehicles_ublb_calculation import max_vehicles_calculation,min_vehicles_calculation
 import utils.data_process
-from utils.set_start_values import set_start_values
 import numpy as np
 import pandas as pd
 import gurobipy as gp
 from gurobipy import GRB,quicksum
-from typing import List
-def solve(time,lr_solution,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUNISHMENT_ND=5/31746)->None:
+import math
+def lr_solve(time,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUNISHMENT_ND=5/31746)->None:
     orders,vehicles,skulimit,sku,other=read()
     valid_sku=utils.data_process.filter(orders=orders,sku=sku)
     print('总SKU种类:',len(valid_sku))
@@ -29,15 +28,16 @@ def solve(time,lr_solution,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUN
 
 
     model = gp.Model("loading_optimization")
-    VT = model.addVars(len(vehicle_types), vtype=GRB.BINARY, name="VT")#vehicle type
-    IA = model.addVars(vehicle_ub, vtype=GRB.BINARY, name="IA")#is_active
-    LA = model.addVars(vehicle_ub, len(sku_des), vtype=GRB.INTEGER,lb=0, name="LA")#Loading_amount
+    VT = model.addVars(len(vehicle_types), vtype=GRB.BINARY, name="vehicle type")
+    IA = model.addVars(vehicle_ub, vtype=GRB.BINARY, name="is_active")
+    LA = model.addVars(vehicle_ub, len(sku_des), vtype=GRB.CONTINUOUS,lb=0, name="Loading_amount")
     sku_demand=demand_des['Qty'].values
     for v in range(vehicle_ub):
         for i in range(len(sku_des)):
             LA[v, i].ub = sku_demand[i]
-    LA_Bi = model.addVars(vehicle_ub, len(sku_des), vtype=GRB.BINARY, name="LA_Bi")#该sku是否为空,Loading_Binary
-
+    LA_Bi = model.addVars(vehicle_ub, len(sku_des), vtype=GRB.BINARY, name="Loading_Binary")#该sku是否为空
+    #destination 3 只能选30辆车, 注意，这条和满足订单约束条件冲突
+    
     if destination!=3:
         #订单满足约束
         model.addConstrs(
@@ -46,13 +46,13 @@ def solve(time,lr_solution,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUN
             , "order_limit")
 
     #只能选择一种车
-    model.addConstr(VT.sum()==1,'only_one_vehicle')
+    model.addConstr(VT.sum()==1)
     #LA_Bi：若LA!=0,则LA_Bi为0,若LA=0,则LA_Bi为1
     epsilon = 1e-6
     for v in range(vehicle_ub):
         for i in range(len(sku_des)):
-            model.addConstr(LA[v, i] <= epsilon + M * (1 - LA_Bi[v, i]),'LA>0->LA_Bi=0')#LA=0,恒成立,当LA>0,则LA_Bi=0
-            model.addConstr(LA[v, i] >= epsilon - M *LA_Bi[v, i],'LA=0->LA_Bi=1')#,当LA>0,恒成立,当LA=0,LA_Bi=1
+            model.addConstr(LA[v, i] <= epsilon + M * (1 - LA_Bi[v, i]))#LA=0,恒成立,当LA>0,则LA_Bi=0
+            model.addConstr(LA[v, i] >= epsilon - M *LA_Bi[v, i])#,当LA>0,恒成立,当LA=0,LA_Bi=1
 
     #车辆未激活时LA为0
     model.addConstrs((LA[v, i] <= IA[v] * sku_demand[i] for v in range(vehicle_ub) for i in range(len(sku_des))), f"active_loading_{v}_{i}")
@@ -78,25 +78,25 @@ def solve(time,lr_solution,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUN
                      for v in range(vehicle_ub)]
     #由于VD_diff_expr是二次还要×VD，gurobipy不能三次相乘，构造辅助变量VD_diff,约束其等于VD_diff_expr
     VD_diff=model.addVars(vehicle_ub,vtype=GRB.CONTINUOUS,name="VD_diff")
-    model.addConstrs((VD_diff[v]==VD_diff_expr[v]*IA[v] for v in range(vehicle_ub)),'VD_diff=VD_diff_EXPR*IA') 
-    VD_z=model.addVars(vehicle_ub, vtype=GRB.BINARY,name="VD_z")
+    model.addConstrs(VD_diff[v]==VD_diff_expr[v]*IA[v] for v in range(vehicle_ub)) 
+    VD_z=model.addVars(vehicle_ub, vtype=GRB.BINARY)
     model.addConstrs(
-        (VD_diff_expr[v]>=-M*VD_z[v] for v in range(vehicle_ub)),'VD<0->VD_z=1'#当VD>0,恒成立,当VD<0,则VD_z[v]=1
+        (VD_diff_expr[v]>=-M*VD_z[v] for v in range(vehicle_ub))#当VD>0,恒成立,当VD<0,则VD_z[v]=1
     )
     model.addConstrs(
-        (VD_diff_expr[v]<=M*(1-VD_z[v]) for v in range(vehicle_ub)),'VD>0->VD_z=0'#当VD<0,恒成立,当VD>0,则VD_z[v]=0
+        (VD_diff_expr[v]<=M*(1-VD_z[v]) for v in range(vehicle_ub))#当VD<0,恒成立,当VD>0,则VD_z[v]=0
     )
     #罚数是负的，目标：让他接近0，最大化
     VD_penalty_expr=PUNISHMENT_VD*quicksum(VD_diff[v]*VD_z[v] for v in range(vehicle_ub))
     #每辆车装载的SKU种类数量尽量不超过设定值。VN>0无所谓，VN<0就惩罚 Variety number
     sku_limit_des=skulimit.loc[skulimit['Source']==1,'Maximum SKU Count'].values[0]
     VN_diff_expr=[(len(sku_des)-quicksum(LA_Bi[v,i] for i in range(len(sku_des)))-sku_limit_des) for v in range(vehicle_ub)]
-    VN_z=model.addVars(vehicle_ub, vtype=GRB.BINARY,name="VN_z")
+    VN_z=model.addVars(vehicle_ub, vtype=GRB.BINARY)
     model.addConstrs(
-        (VN_diff_expr[v]<=M*VN_z[v] for v in range(vehicle_ub)),'VN>0->VN_z=1'#当VN<0,恒成立,当VN>0,则VN_z[v]=1
+        (VN_diff_expr[v]<=M*VN_z[v] for v in range(vehicle_ub))#当VN<0,恒成立,当VN>0,则VN_z[v]=1
     )
     model.addConstrs(
-        (VN_diff_expr[v]>=-M*(1-VN_z[v]) for v in range(vehicle_ub)),'VN<0->VN_z=0'#当VN>0,恒成立,当VN<0,则VN_z[v]=0
+        (VN_diff_expr[v]>=-M*(1-VN_z[v]) for v in range(vehicle_ub))#当VN>0,恒成立,当VN<0,则VN_z[v]=0
     )
 
     #罚数是正的，目标：让他接近0，最小化, 若目标函数最大化，加个负号
@@ -104,12 +104,12 @@ def solve(time,lr_solution,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUN
     #若destination==3,则尽量满足订单量需求，减小差的sku件数,num Diff
     if destination==3:
         ND_diff_expr=[sku_demand[i]-quicksum(LA[v,i] for v in range(vehicle_ub)) for i in range(len(sku_des)) ]
-        ND_z=model.addVars(len(sku_des), vtype=GRB.BINARY,name="ND_z")
+        ND_z=model.addVars(len(sku_des), vtype=GRB.BINARY)
         model.addConstrs(
-            (ND_diff_expr[i]<=M*ND_z[i] for i in range(len(sku_des))),'ND>0->ND_z=1'#当ND<0,恒成立,当ND>0,则ND_z[i]=1
+            (ND_diff_expr[i]<=M*ND_z[i] for i in range(len(sku_des)))#当ND<0,恒成立,当ND>0,则ND_z[i]=1
         )
         model.addConstrs(
-            (ND_diff_expr[i]>=-M*(1-ND_z[i]) for i in range(len(sku_des))),'ND<0->ND_z=0'#当ND>0,恒成立,当ND<0,则ND_z[i]=0
+            (ND_diff_expr[i]>=-M*(1-ND_z[i]) for i in range(len(sku_des)))#当ND>0,恒成立,当ND<0,则ND_z[i]=0
         )
          #destination3离运完大概差31746件
         #罚数是正的，目标：让他接近0，最小化, 若目标函数最大化，加个负号
@@ -132,11 +132,6 @@ def solve(time,lr_solution,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUN
         (-VN_penalty_expr)+
         (-ND_penalty_expr)
         ) ,GRB.MAXIMIZE)
-    model.write('loading_optimization.rlp')
-    model.update()
-    if lr_solution is not None:
-        set_start_values(model,lr_solution)
-    model.update()
     model.setParam('TimeLimit', time)
     model.optimize()
 
@@ -164,22 +159,53 @@ def solve(time,lr_solution,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUN
     for k in range(len(vehicle_types)):
         if VT_values[k]!=0:
             print(f'模型选择了车型{k+1}')
-    IA_values = model.getAttr('x', IA)
-    print(f'模型激活了{sum(IA_values[i] for i in range(vehicle_ub))}量车')
-    LA_values = model.getAttr('x', LA)
-    v_list=[]
-    sku_list=[]
-    for v in range(vehicle_ub): #注意，有可能不激活的车也装载了，也有可能不。请后续检查
-        v_list.append(v)
-        lst=[]
-        for i in range(len(sku_des)):
-            lst.append(LA_values[(v,i)])
-        sku_list.append(lst)
-    LA_Bi_values = model.getAttr('x', LA_Bi)
-    VC=[]#Variety Count
-    for v in range(vehicle_ub):
-        VC.append(len(sku_des)-sum(LA_Bi_values[(v,i)]for i in range(len(sku_des))))
-    with pd.ExcelWriter(rf'result/loading_D{destination}.xlsx') as writer:
-        pd.DataFrame(np.array(sku_list)).to_excel(writer, sheet_name='Loading_amount', index=True,header=sku_des)
-        pd.DataFrame(np.array(VC)).to_excel(writer, sheet_name='sku_variety_count', index=True)                      
-        pd.DataFrame(np.array(sku_list).sum(axis=0).reshape(1,-1)).to_excel(writer, sheet_name='SKU_amount', index=True,header=sku_des)  
+    VT_values = dict(model.getAttr('x', VT))
+    IA_values = dict(model.getAttr('x', IA))
+    LA_values = dict(model.getAttr('x', LA))
+    LA_Bi_values = dict(model.getAttr('x', LA_Bi))
+    VD_diff_values = dict(model.getAttr('x', VD_diff))
+    VD_z_values = dict(model.getAttr('x', VD_z))
+    VN_z_values = dict(model.getAttr('x', VN_z))
+    if destination==3:
+        ND_z_values = dict(model.getAttr('x', ND_z))
+        solution = {
+            "VT": VT_values,
+            "IA": IA_values,
+            "LA": LA_values,
+            "LA_Bi": LA_Bi_values,
+            "VD_diff": VD_diff_values,
+            "VD_z": VD_z_values,
+            "VN_z": VN_z_values,
+            "ND_z": ND_z_values
+        }
+    else:
+        solution = {
+            "VT": VT_values,
+            "IA": IA_values,
+            "LA": LA_values,
+            "LA_Bi": LA_Bi_values,
+            "VD_diff": VD_diff_values,
+            "VD_z": VD_z_values,
+            "VN_z": VN_z_values,
+        }
+    import pickle
+    def save_solution_to_file(solution, filename=rf"result/lr_solution_D{destination}.pkl"):
+        with open(filename, "wb") as f:
+            pickle.dump(solution, f)
+        print(f"Solution saved to {filename}")
+    save_solution_to_file(solution)
+    return 0
+import pickle
+if __name__ == "__main__":
+    destination=3
+    if destination==3:
+        c1=1 #deprecated
+        c2=1 #车辆最少
+        c3=2  #车辆SKU种类最少,最大是c3
+        PUNISHMENT_VD=1e-3 #尽量大于最小体积
+        PUNISHMENT_VN=1e-2  #车载SKU种类尽量不超过限制
+        PUNISHMENT_ND=50/31746   #针对destinaion 3, 尽量满足订单需求
+        
+        lr_solve(time=3000,destination=destination,c2=c2,c3=c3,PUNISHMENT_VD=PUNISHMENT_VD,PUNISHMENT_VN=PUNISHMENT_VN,PUNISHMENT_ND=PUNISHMENT_ND)
+    else:
+        lr_solve(time=5000,destination=destination,c2=30,c3=5,PUNISHMENT_VD=1e-3,PUNISHMENT_VN=1e-2)
