@@ -138,6 +138,7 @@ def solve(time,lr_solution,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUN
         set_start_values(model,lr_solution)
     model.update()
     model.setParam('TimeLimit', time)
+    model.Params.Heuristics = 0.5
     model.optimize()
 
     # 输出小目标值

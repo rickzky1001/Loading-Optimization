@@ -4,7 +4,7 @@ from utils.lr_solution_process import lr_solution_process
 import sys
 import pickle
 if __name__=='__main__':
-    for destination in [4]:
+    for destination in [2]:
         if destination==3:
             c1=1 #deprecated
             c2=1 #车辆最少
@@ -18,10 +18,7 @@ if __name__=='__main__':
             lr_solution=lr_solution_process(lr_solution_raw,destination=destination)
             solve(time=3000,lr_solution=lr_solution,destination=destination,c2=c2,c3=c3,PUNISHMENT_VD=PUNISHMENT_VD,PUNISHMENT_VN=PUNISHMENT_VN,PUNISHMENT_ND=PUNISHMENT_ND)
         else:
-            # lr_solve(time=8500,destination=destination,c2=30,c3=5,PUNISHMENT_VD=1e-3,PUNISHMENT_VN=1e-2)
-            # with open(rf'result/lr_solution_D{destination}.pkl', 'rb') as file:  # 注意使用二进制模式读取
-            #     lr_solution = pickle.load(file) 
-            solve(time=98500,lr_solution=None,destination=destination,c2=30,c3=5,PUNISHMENT_VD=1e-3,PUNISHMENT_VN=1e-2)
+            solve(time=3600*24,lr_solution=None,destination=destination,c2=30,c3=5,PUNISHMENT_VD=1e-3,PUNISHMENT_VN=1e-2)
     
 #对于destination3: ND>c3>VN=VD>c2
 #对于destination124: c2>c3>VD=VN

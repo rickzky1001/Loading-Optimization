@@ -71,9 +71,15 @@ def visualize_log(file,lr_file):
     plt.savefig(rf'result/{file}_vs_{lr_file}.png')
 
 if __name__=='__main__':
+    log_D1 = 'log_D1'
+    log_lr_D1 = 'log_lr_D1'
+    log_D2 = 'log_D2'
+    log_lr_D2 = 'log_lr_D2'
     log_D3 = 'log_D3'
     log_lr_D3 = 'log_lr_D3'
     log_D4 = 'log_D4'
     log_lr_D4 = 'log_lr_D4'
+    #visualize_log(log_D1,log_lr_D1)
+    visualize_log(log_D2,log_lr_D2)
     visualize_log(log_D3,log_lr_D3)
     visualize_log(log_D4,log_lr_D4)

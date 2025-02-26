@@ -11,7 +11,6 @@ def lr_solve(time,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUNISHMENT_N
     valid_sku=utils.data_process.filter(orders=orders,sku=sku)
     print('总SKU种类:',len(valid_sku))
     demands=pd.merge(orders,sku,on='SKU')
-    demands.to_excel('demands.xlsx',index=False)
     #车辆数ub,lb计算
     vehicle_types = [1,2,3,4]
     M=100000
@@ -132,6 +131,7 @@ def lr_solve(time,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUNISHMENT_N
         (-ND_penalty_expr)
         ) ,GRB.MAXIMIZE)
     model.setParam('TimeLimit', time)
+    model.Params.Heuristics = 0.5
     model.optimize()
 
     # 输出小目标值
@@ -196,7 +196,7 @@ def lr_solve(time,destination:int,c2,c3,PUNISHMENT_VD,PUNISHMENT_VN,PUNISHMENT_N
     return 0
 import pickle
 if __name__ == "__main__":
-    destination=3
+    destination=2
     if destination==3:
         c1=1 #deprecated
         c2=1 #车辆最少
@@ -204,7 +204,7 @@ if __name__ == "__main__":
         PUNISHMENT_VD=1e-3 #尽量大于最小体积
         PUNISHMENT_VN=1e-2  #车载SKU种类尽量不超过限制
         PUNISHMENT_ND=50/31746   #针对destinaion 3, 尽量满足订单需求
-        
+
         lr_solve(time=3000,destination=destination,c2=c2,c3=c3,PUNISHMENT_VD=PUNISHMENT_VD,PUNISHMENT_VN=PUNISHMENT_VN,PUNISHMENT_ND=PUNISHMENT_ND)
     else:
-        lr_solve(time=5000,destination=destination,c2=30,c3=5,PUNISHMENT_VD=1e-3,PUNISHMENT_VN=1e-2)
+        lr_solve(time=3600*10,destination=destination,c2=30,c3=5,PUNISHMENT_VD=1e-3,PUNISHMENT_VN=1e-2)
